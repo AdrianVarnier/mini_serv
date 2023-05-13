@@ -1,9 +1,11 @@
 #include <stdio.h> //sprintf
 #include <unistd.h> // write
-#include <string.h> // strlen
+#include <string.h> // strlen, strcpy
 #include <stdlib.h> // exit
 #include <netinet/ip.h> // sockaddr_in, htonl, htons
 #include <sys/select.h> // select
+#include <sys/types.h> // recv
+#include <sys/socket.h> // recv
 
 typedef struct	client_s
 {
@@ -41,6 +43,18 @@ int	greatest_fd(server_t server)
 	return (fd);
 }
 
+int	get_id(server_t *server, int fd)
+{
+	client_t *index = server->clients;
+	while (index != NULL)
+	{
+		if (index->fd == fd)
+			return (index->id);
+		index = index->next;
+	}
+	return (-1);
+}
+
 void	init_server(server_t *server, char *port)
 {
 	server->id = 0;
@@ -72,6 +86,39 @@ size_t	ilength(int n)
 	return (size);
 }
 
+void	send_all(server_t* server, int fd, char *msg)
+{
+	for (client_t* index = server->clients; index != NULL; index = index->next)
+	{
+		if (index->fd != fd && FD_ISSET(index->fd, &server->wset) != 0)
+		{
+			if (send(index->fd, msg, strlen(msg), 0) < 0)
+				errmsg_exit("Fatal error\n", 1);
+		}
+	}
+}
+
+void	erase_client(server_t *server, int fd)
+{
+	client_t*	tmp = NULL;
+	client_t*	index = server->clients;
+	while (index != NULL)
+	{
+		if (index->fd == fd)
+		{
+			if (tmp != NULL)
+				tmp->next = index->next;
+			else
+				server->clients = index->next;
+			break;
+		}
+		tmp = index;
+		index = index->next;
+	}
+	FD_CLR(fd, &server->set);
+	close(fd);
+}
+
 void	add_client(server_t *server)
 {
 	struct sockaddr_in	addr;
@@ -96,17 +143,11 @@ void	add_client(server_t *server)
 			index = index->next;
 		index->next = new_client;
 	}
-	for (client_t* index = server->clients; index != NULL; index = index->next)
-	{
-		if (index->fd != new_client->fd && FD_ISSET(index->fd, &server->wset) != 0)
-		{
-			size_t len = strlen("server: client  just arrived\n") + ilength(index->id);
-			char msg[len];
-			sprintf(msg, "server: client %d just arrived\n", new_client->id);
-			if (send(index->fd, msg, strlen(msg), 0) < 0)
-				errmsg_exit("Fatal error\n", 1);
-		}
-	}
+	size_t size = strlen("server: client  just arrived\n") + ilength(new_client->id);
+	char msg[size + 1];
+	msg[size] = '\0';
+	sprintf(msg, "server: client %d just arrived\n", new_client->id);
+	send_all(server, new_client->fd, msg);
 }
 
 int main(int argc, char **argv)
@@ -131,9 +172,46 @@ int main(int argc, char **argv)
 			if (FD_ISSET(fd, &server.rset) != 0)
 			{
 				if (fd == server.fd)
+				{
 					add_client(&server);
+					break ;
+				}
 				else
 				{
+					int bytes = 1024;
+					char 	buff[bytes + 1];
+					bzero(buff, bytes + 1);
+					char*	s = calloc(sizeof(char), strlen("client : ") + ilength(get_id(&server, fd) + 1));
+					if (s == NULL)
+						errmsg_exit("Fatal error\n", 1);
+					sprintf(s, "client %d: ", get_id(&server, fd));
+					while (bytes == 1024 || buff[bytes - 1] != '\n')
+					{
+						bytes = recv(fd, &buff, 1024, 0);
+						if (bytes < 1)
+							break ;
+						buff[bytes] = '\0';
+						s = realloc(s, strlen(s) + strlen(buff));
+						if (s == NULL)
+							errmsg_exit("Fatal error\n", 1);
+						strcpy(s + strlen(s), buff);
+					}
+					if (bytes < 1)
+					{
+						free(s);
+						size_t size = strlen("server: client  just left\n") + ilength(get_id(&server, fd));
+						char msg[size + 1];
+						msg[size] = '\0';
+						sprintf(msg, "server: client %d just left\n", get_id(&server, fd));
+						send_all(&server, fd, msg);
+						erase_client(&server, fd);
+					}
+					else
+					{
+						send_all(&server, fd, s);
+						free(s);
+					}
+					break;
 				}
 			}
 		}
