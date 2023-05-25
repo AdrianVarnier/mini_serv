@@ -49,7 +49,7 @@ int main(int argc, char **argv)
 	FD_SET(server_fd, &fds);
 
 	struct sockaddr_in	server_addr;
-	socklen_t			server_len;
+	socklen_t			socklen;
 	bzero(&server_addr, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_addr.s_addr = htonl(2130706433);
@@ -71,7 +71,7 @@ int main(int argc, char **argv)
 		{
 			if (FD_ISSET(fd, &read_fds) && fd == server_fd)
 			{
-				int new_fd = accept(server_fd, (struct sockaddr *)&server_addr, &server_len);
+				int new_fd = accept(server_fd, (struct sockaddr *)&server_addr, &socklen);
 				if (new_fd < 0)
 					continue;
 				if (fd_max < new_fd)
