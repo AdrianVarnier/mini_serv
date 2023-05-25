@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 
 typedef struct	s_client
@@ -104,7 +105,7 @@ int main(int argc, char **argv)
 							sprintf(buffer_write, "client %d: %s\n", clients[fd].id, clients[fd].msg);
 							ft_send(fd);
 							bzero(&clients[fd].msg, strlen(clients[fd].msg));
-							j--;
+							j = -1;
 						}
 					}
 					break ;
